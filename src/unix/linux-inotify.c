@@ -33,6 +33,10 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#if defined(__ANDROID_API__) && __ANDROID_API__ < 21
+# define __ANDROID_LOW_API__ 1
+#endif
+
 struct watcher_list {
   RB_ENTRY(watcher_list) entry;
   QUEUE watchers;
@@ -67,19 +71,27 @@ static void maybe_free_watcher_list(struct watcher_list* w,
 
 static int init_inotify(uv_loop_t* loop) {
   int fd;
-
+  int err = 0;
   if (loop->inotify_fd != -1)
     return 0;
-
+#if !defined(__ANDROID_LOW_API__)
   fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+#else
+  fd = inotify_init();
+#endif
   if (fd < 0)
     return UV__ERR(errno);
 
+#if defined(__ANDROID_LOW_API__)
+  err = uv__cloexec(fd, 1);
+  if (err == 0)
+    err = uv__nonblock(fd, 1);
+#endif
   loop->inotify_fd = fd;
   uv__io_init(&loop->inotify_read_watcher, uv__inotify_read, loop->inotify_fd);
   uv__io_start(loop, &loop->inotify_read_watcher, POLLIN);
 
-  return 0;
+  return err;
 }
 
 
